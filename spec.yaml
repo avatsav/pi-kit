@@ -44,7 +44,11 @@ credentials:
       resourceHosts:
         - chatgpt.com
       sentinels:
-        accessToken: oai-oat01-proxy-managed
+        # Codex and OpenCode can use the standard oai-oat01-proxy-managed
+        # sentinel here. Pi differs: its openai-codex provider decodes the
+        # access token locally to derive chatgpt-account-id before every
+        # proxied request, so the sentinel must also be JWT-shaped.
+        accessToken: eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoicHJveHktbWFuYWdlZCJ9fQ.proxy-managed
         refreshToken: oai-ort01-proxy-managed
       credentialFile:
         path: ~/.pi/agent/auth.json
@@ -53,10 +57,10 @@ credentials:
             type: oauth
             access: "{{.AccessToken}}"
             refresh: "{{.RefreshToken}}"
-            # Pi's OpenAI Codex OAuth refresher decodes the access token JWT to
-            # find an account id. The sandbox only sees sentinel values, not the
-            # real JWT, so let the sbx proxy own refresh and keep pi from trying
-            # to refresh the sentinel locally.
+            # Pi decodes the access token JWT to find an account id both during
+            # refresh and when building Codex request headers. The sandbox only
+            # sees sentinel values, not the real token, so the access sentinel is
+            # JWT-shaped and refresh is left to the sbx proxy.
             expires: 4102444800000
             accountId: proxy-managed
   - service: anthropic
