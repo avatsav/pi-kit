@@ -76,3 +76,11 @@ setup:
     - command: 'if [ -n "${HTTP_PROXY:-}" ]; then npm config set proxy="$HTTP_PROXY" https-proxy="${HTTPS_PROXY:-$HTTP_PROXY}"; fi'
       user: "1000"
       description: Point npm at the sandbox proxy for pi runtime npm operations
+  startup:
+    # The apiKey declarations create placeholders even when no host credential
+    # is bound. Remove those false positives before Pi discovers providers.
+    - command:
+        - sh
+        - /home/agent/.local/bin/pi-auth.sh
+      user: "1000"
+      description: Resolve genuinely bound provider credentials for Pi

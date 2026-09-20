@@ -1,0 +1,11 @@
+#!/bin/sh
+# Apply the credential state resolved at sandbox startup, then run the Pi binary
+# baked into the image.
+set -u
+
+HOME="${HOME:-/home/agent}"
+AUTH_ENV_FILE="$HOME/.pi/agent/sbx-auth.env"
+# shellcheck source=/dev/null
+[ -f "$AUTH_ENV_FILE" ] && . "$AUTH_ENV_FILE"
+
+exec /usr/local/bin/pi "$@"
