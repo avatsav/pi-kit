@@ -1,0 +1,74 @@
+schemaVersion: "2"
+kind: sandbox
+name: pi-kit
+displayName: Pi Kit
+description: Pi coding agent for Docker Sandboxes with OpenAI API-key and ChatGPT OAuth support
+sandbox:
+  image: ghcr.io/avatsav/pi-kit-image:latest
+  entrypoint:
+    - pi
+agentInstructions:
+  filename: AGENTS.md
+permissions:
+  network:
+    allow:
+      # OpenAI API-key provider.
+      - api.openai.com
+      # OpenAI Codex / ChatGPT subscription provider.
+      - auth.openai.com
+      - chatgpt.com
+      - '*.chatgpt.com'
+      - files.openai.com
+      - '*.oaiusercontent.com'
+      # Optional Anthropic API-key provider support.
+      - api.anthropic.com
+      # pi runtime package installs/updates for extensions, skills, themes, etc.
+      - registry.npmjs.org
+      # pi install/update telemetry and update checks. Remove if you disable telemetry/update checks.
+      - pi.dev
+credentials:
+  - service: openai
+    apiKey:
+      name: OPENAI_API_KEY
+      proxyManaged: true
+      inject:
+        - domain: api.openai.com
+          header: Authorization
+          format: Bearer %s
+    # ChatGPT Plus/Pro OAuth for pi's built-in `openai-codex` provider.
+    # Host setup: `sbx secret set openai --oauth`, then create/recreate the sandbox.
+    oauth:
+      tokenEndpoint:
+        host: auth.openai.com
+        path: /oauth/token
+      resourceHosts:
+        - chatgpt.com
+      sentinels:
+        accessToken: oai-oat01-proxy-managed
+        refreshToken: oai-ort01-proxy-managed
+      credentialFile:
+        path: ~/.pi/agent/auth.json
+        structure:
+          openai-codex:
+            type: oauth
+            access: "{{.AccessToken}}"
+            refresh: "{{.RefreshToken}}"
+            # Pi's OpenAI Codex OAuth refresher decodes the access token JWT to
+            # find an account id. The sandbox only sees sentinel values, not the
+            # real JWT, so let the sbx proxy own refresh and keep pi from trying
+            # to refresh the sentinel locally.
+            expires: 4102444800000
+            accountId: proxy-managed
+  - service: anthropic
+    apiKey:
+      name: ANTHROPIC_API_KEY
+      proxyManaged: true
+      inject:
+        - domain: api.anthropic.com
+          header: x-api-key
+          format: '%s'
+setup:
+  install:
+    - command: 'if [ -n "${HTTP_PROXY:-}" ]; then npm config set proxy="$HTTP_PROXY" https-proxy="${HTTPS_PROXY:-$HTTP_PROXY}"; fi'
+      user: "1000"
+      description: Point npm at the sandbox proxy for pi runtime npm operations

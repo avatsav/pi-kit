@@ -1,0 +1,108 @@
+name: Build and publish pi-kit
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GHCR_OWNER: avatsav
+  IMAGE_NAME: pi-kit-image
+  KIT_NAME: pi-kit
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute refs
+        id: refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner_lc="$(printf '%s' "$GHCR_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner_lc}/${IMAGE_NAME}"
+          kit="ghcr.io/${owner_lc}/${KIT_NAME}"
+          short_sha="${GITHUB_SHA::12}"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "kit=${kit}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push sandbox image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.refs.outputs.image }}:latest
+            ${{ steps.refs.outputs.image }}:sha-${{ steps.refs.outputs.short_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install sbx
+        run: scripts/install-sbx.sh >> "$GITHUB_PATH"
+        env:
+          # docker/sbx-releases may require a token with read access. If the
+          # default token cannot read it, add a repo secret named
+          # SBX_RELEASES_TOKEN and the expression below will use it.
+          GITHUB_TOKEN: ${{ secrets.SBX_RELEASES_TOKEN || github.token }}
+
+      - name: Validate kit
+        run: sbx kit validate .
+
+      - name: Publish kit artifact
+        id: publish-kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          kit_ref="${{ steps.refs.outputs.kit }}"
+          short_sha="${{ steps.refs.outputs.short_sha }}"
+
+          tags=("sha-${short_sha}" "latest")
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tags+=("${GITHUB_REF_NAME}")
+          fi
+
+          for tag in "${tags[@]}"; do
+            echo "Publishing ${kit_ref}:${tag}"
+            sbx kit push . "${kit_ref}:${tag}"
+          done
+
+          {
+            echo "### Published pi-kit"
+            echo ""
+            echo "- Image: \`${{ steps.refs.outputs.image }}:latest\`"
+            echo "- Kit: \`${kit_ref}:latest\`"
+            echo "- SHA kit: \`${kit_ref}:sha-${short_sha}\`"
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              echo "- Tag kit: \`${kit_ref}:${GITHUB_REF_NAME}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
